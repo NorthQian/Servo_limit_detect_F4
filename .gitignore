@@ -1,0 +1,68 @@
+# Keil MDK build outputs
+*.uvguix.*
+*.uvgui.*
+*.scvd
+*.uvprojx.*
+*.uvoptx.*
+JLinkLog.txt
+JLinkSettings.ini
+*.ini
+
+# Compiled objects / dependency / listings / outputs
+*.o
+*.d
+*.D
+*.crf
+*.lst
+*.map
+*.htm
+*.dep
+*.iex
+*.axf
+*.elf
+*.hex
+*.bin
+*.out
+*.lib
+*.a
+*.dll
+*.so
+*.dylib
+
+# Debug
+*.dbgconf
+DebugConfig/
+RTE/
+
+# Build directories
+MDK-ARM/INA229_demo/
+MDK-ARM/RTE/
+MDK-ARM/DebugConfig/
+MDK-ARM/*.uvguix.*
+MDK-ARM/*.uvoptx
+MDK-ARM/JLinkLog.txt
+MDK-ARM/JLinkSettings.ini
+
+# IDE / Tools
+.vs/
+.vscode/
+.claude/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# CubeMX metadata
+.mxproject
+
+# Screenshots / images
+*.png
+*.jpg
+*.bmp
+
+# Temp
+*.tmp
+*.bak
+*.orig
