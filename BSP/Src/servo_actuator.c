@@ -106,7 +106,7 @@ void Servo_SendAngles(ServoChannel_t *channels, uint8_t num, uint16_t time_ms)
     frame[idx++] = (uint8_t)(sum & 0xFF);
 
     /* Transmit via USART2  full-duplex TX, 115200 */
-//    HAL_UART_Transmit(&huart2, frame, 128, HAL_MAX_DELAY);
+    HAL_UART_Transmit(&huart2, frame, 128, HAL_MAX_DELAY);
 }
 
 /**

@@ -15,22 +15,24 @@ extern CalibState_t calib_state;
 extern ServoLimit_t servo_limits[SERVO_NUM];
 extern INA229 Ina229;
 
-void App_Servo(void *argument)
+void App_sweep_task(void *argument)
 {
-  /* USER CODE BEGIN App_Servo */
-
+  /* USER CODE BEGIN App_sweep_task */
   osSemaphoreAcquire(Key2SemaHandle, osWaitForever);
-
+  HAL_GPIO_WritePin(LED_BLUE_GPIO_Port, LED_BLUE_Pin, GPIO_PIN_RESET);
   /* Infinite loop */
   for (;;)
   {
-    for (cur_idx = 0; cur_idx < CALIB_SERVO_COUNT; cur_idx++)
+    for (cur_idx = 0; cur_idx < CALIB_SERVO_COUNT; /*cur_idx++*/)
     {
 
       switch (calib_state)
       {
       case CALIB_IDLE:
         cur_angle = servo_limits[cur_idx].center_deg;
+        Servo_SendAngles((ServoChannel_t[]){{.channel = cur_idx, .angle = cur_angle}}, 1, 500);
+        osDelay(500);
+        calib_state = CALIB_SEARCH_UP;
         break;
       case CALIB_SEARCH_UP:
 
@@ -38,19 +40,20 @@ void App_Servo(void *argument)
         {
 
           cur_angle += CALIB_STEP_UP_DEG;
-
-
-          if (cur_angle >= servo_limits[cur_idx].upper_limit_deg)
-          {
-            servo_limits[cur_idx].upper_limit_deg = cur_angle;
-          }
-        }else{
+          Servo_SendAngles((ServoChannel_t[]){{.channel = cur_idx, .angle = cur_angle}}, 1, 50);
+          osDelay(50);
+        }
+        else
+        {
+          servo_limits[cur_idx].upper_limit_deg = cur_angle;
 
           calib_state = CALIB_TRANSITION;
         }
         break;
       case CALIB_TRANSITION:
         cur_angle = servo_limits[cur_idx].center_deg;
+        Servo_SendAngles((ServoChannel_t[]){{.channel = cur_idx, .angle = cur_angle}}, 1, 500);
+        osDelay(500);
         calib_state = CALIB_SEARCH_DOWN;
         break;
       case CALIB_SEARCH_DOWN:
@@ -58,22 +61,27 @@ void App_Servo(void *argument)
         {
 
           cur_angle -= CALIB_STEP_DOWN_DEG;
-
-          if (cur_angle <= servo_limits[cur_idx].lower_limit_deg)
-          {
-            servo_limits[cur_idx].lower_limit_deg = cur_angle;
-          }
-        }else{
+          Servo_SendAngles((ServoChannel_t[]){{.channel = cur_idx, .angle = cur_angle}}, 1, 50);
+          osDelay(50);
+        }
+        else
+        {
+          servo_limits[cur_idx].lower_limit_deg = cur_angle;
 
           calib_state = CALIB_NEXT_SERVO;
         }
         break;
+      case CALIB_NEXT_SERVO:
+        osDelay(1);
+        break;
       default:
+
         break;
       }
 
       osDelay(50);
     }
+    osDelay(1);
   }
-  /* USER CODE END App_Servo */
+  /* USER CODE END App_sweep_task */
 }
