@@ -4,6 +4,8 @@
 #include "servo.h"
 #include "servo_actuator.h"
 #include "ina229.h"
+#include "tim.h"
+#include "bsp_log.h"
 
 extern osSemaphoreId_t Key1SemaHandle;
 extern osSemaphoreId_t Key2SemaHandle;
@@ -19,6 +21,7 @@ void App_sweep_task(void *argument)
 {
   /* USER CODE BEGIN App_sweep_task */
   osSemaphoreAcquire(Key2SemaHandle, osWaitForever);
+  SweepTimer_Start();
   HAL_GPIO_WritePin(LED_BLUE_GPIO_Port, LED_BLUE_Pin, GPIO_PIN_RESET);
   /* Infinite loop */
   for (;;)
@@ -36,10 +39,13 @@ void App_sweep_task(void *argument)
         break;
       case CALIB_SEARCH_UP:
 
-        if (Ina229.Current < 0.6f)
+        if (Ina229.Current < 0.6f && cur_angle < CALIB_HARD_MAX)
         {
-
-          cur_angle += CALIB_STEP_UP_DEG;
+          if (cur_angle + CALIB_STEP_UP_DEG <= CALIB_HARD_MAX) {
+              cur_angle += CALIB_STEP_UP_DEG;
+          } else {
+              cur_angle = CALIB_HARD_MAX;
+          }
           Servo_SendAngles((ServoChannel_t[]){{.channel = cur_idx, .angle = cur_angle}}, 1, 50);
           osDelay(50);
         }
@@ -57,10 +63,13 @@ void App_sweep_task(void *argument)
         calib_state = CALIB_SEARCH_DOWN;
         break;
       case CALIB_SEARCH_DOWN:
-        if (Ina229.Current < 0.6f)
+        if (Ina229.Current < 0.6f && cur_angle > CALIB_HARD_MIN)
         {
-
-          cur_angle -= CALIB_STEP_DOWN_DEG;
+          if (cur_angle >= CALIB_HARD_MIN + CALIB_STEP_UP_DEG) {
+              cur_angle -= CALIB_STEP_UP_DEG;
+          } else {
+              cur_angle = CALIB_HARD_MIN;
+          }
           Servo_SendAngles((ServoChannel_t[]){{.channel = cur_idx, .angle = cur_angle}}, 1, 50);
           osDelay(50);
         }
@@ -72,8 +81,29 @@ void App_sweep_task(void *argument)
         }
         break;
       case CALIB_NEXT_SERVO:
-        osDelay(1);
+        cur_angle = servo_limits[cur_idx].center_deg;
+        Servo_SendAngles((ServoChannel_t[]){{.channel = cur_idx, .angle = cur_angle}}, 1, 500);
+        osDelay(500);
+        cur_idx++;
+        if (cur_idx < CALIB_SERVO_COUNT) {
+            calib_state = CALIB_IDLE;
+        } else {
+            calib_state = CALIB_DONE;
+        }
         break;
+      case CALIB_DONE:
+      {
+          static uint8_t reported = 0;
+          if (!reported) {
+              Calib_ExportServoLimits();
+              {
+                  PrintLog("Sweep total time: %lus\r\n", SweepTimer_GetElapsedSec());
+              }
+              reported = 1;
+          }
+          osDelay(100);
+          break;
+      }
       default:
 
         break;

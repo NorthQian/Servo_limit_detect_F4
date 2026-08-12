@@ -65,6 +65,12 @@ extern CalibEntry_t calib_results[CALIB_SERVO_COUNT];
  */
 void Calib_ExportReport(void);
 
+/**
+ * @brief  Print servo_limits[] table via SEGGER RTT
+ * @note   Prints runtime-updated limits (from calibration), not static calib_results[]
+ */
+void Calib_ExportServoLimits(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -18,10 +18,11 @@
  */
 
 #include "servo_calib.h"
+#include "servo.h"
 #include "servo_actuator.h"
 #include "current.h"
 #include "main.h"
-#include "SEGGER_RTT.h"
+#include "bsp_log.h"
 
 /* Module state ---------------------------------------------------------------*/
 CalibState_t   calib_state   = CALIB_IDLE;
@@ -105,31 +106,70 @@ void Calib_ExportReport(void)
 {
     uint8_t i;
 
-    SEGGER_RTT_printf(0, "\n");
-    SEGGER_RTT_printf(0,
-        "============================================================\n");
-    SEGGER_RTT_printf(0,
-        "  Servo Calibration Report\n");
-    SEGGER_RTT_printf(0,
-        "------------------------------------------------------------\n");
-    SEGGER_RTT_printf(0,
-        "  %-4s %-3s %-6s %-6s %-6s\n",
+    PrintLog("\r\n");
+    PrintLog(
+        "============================================================\r\n");
+    PrintLog(
+        "  Servo Calibration Report\r\n");
+    PrintLog(
+        "------------------------------------------------------------\r\n");
+    PrintLog(
+        "  %-4s %-3s %-6s %-6s %-6s\r\n",
         "Name", "CH", "Center", "Lower", "Upper");
-    SEGGER_RTT_printf(0,
-        "------------------------------------------------------------\n");
+    PrintLog(
+        "------------------------------------------------------------\r\n");
 
     for (i = 0; i < CALIB_SERVO_COUNT; i++) {
         CalibEntry_t *e = &calib_results[i];
-        SEGGER_RTT_printf(0,
-            "  A%-3d  %02d   %-6d %-6d %-6d %s\n",
+        PrintLog(
+            "  A%-3d  %02d   %-6d %-6d %-6d %s\r\n",
             i, e->channel, e->center, e->lower_limit, e->upper_limit,
             e->calib_done ? "" : "(skipped)");
     }
 
-    SEGGER_RTT_printf(0,
-        "============================================================\n");
-    SEGGER_RTT_printf(0,
-        "  Total: %d servos calibrated\n", CALIB_SERVO_COUNT);
-    SEGGER_RTT_printf(0,
-        "============================================================\n\n");
+    PrintLog(
+        "============================================================\r\n");
+    PrintLog(
+        "  Total: %d servos calibrated\r\n", CALIB_SERVO_COUNT);
+    PrintLog(
+        "============================================================\r\n\r\n");
+}
+
+/**
+ * @brief  Print servo_limits[] table via SEGGER RTT
+ * @note   Prints runtime-updated limits from calibration sweep
+ */
+void Calib_ExportServoLimits(void)
+{
+    uint8_t i;
+
+    PrintLog("\r\n");
+    PrintLog(
+        "============================================================\r\n");
+    PrintLog(
+        "  Servo Limit Sweep Results (servo_limits[])\r\n");
+    PrintLog(
+        "------------------------------------------------------------\r\n");
+    PrintLog(
+        "  %-4s %-3s %-6s %-6s %-6s\r\n",
+        "Idx", "CH", "Center", "Lower", "Upper");
+    PrintLog(
+        "------------------------------------------------------------\r\n");
+
+    for (i = 0; i < SERVO_NUM; i++) {
+        PrintLog(
+            "  %-4d  %02d   %-6d %-6d %-6d\r\n",
+            i,
+            servo_limits[i].channel,
+            servo_limits[i].center_deg,
+            servo_limits[i].lower_limit_deg,
+            servo_limits[i].upper_limit_deg);
+    }
+
+    PrintLog(
+        "============================================================\r\n");
+    PrintLog(
+        "  Total: %d servos\r\n", SERVO_NUM);
+    PrintLog(
+        "============================================================\r\n\r\n");
 }

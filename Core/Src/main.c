@@ -21,6 +21,7 @@
 #include "cmsis_os.h"
 #include "can.h"
 #include "spi.h"
+#include "tim.h"
 #include "usart.h"
 #include "gpio.h"
 
@@ -98,6 +99,7 @@ int main(void)
   MX_SPI1_Init();
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
+  MX_TIM7_Init();
   /* USER CODE BEGIN 2 */
   LCD_Init();
   Current_Init();
@@ -195,7 +197,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     HAL_IncTick();
   }
   /* USER CODE BEGIN Callback 1 */
-
+  if (htim->Instance == TIM7)
+  {
+      sweep_elapsed_seconds++;
+  }
   /* USER CODE END Callback 1 */
 }
 

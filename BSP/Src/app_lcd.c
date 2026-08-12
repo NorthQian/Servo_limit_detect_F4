@@ -6,6 +6,7 @@
 #include "servo.h"
 #include "stdio.h"
 #include "cmsis_os2.h"
+#include "tim.h"
 
 extern uint8_t cur_idx;
 extern uint16_t cur_angle;
@@ -55,6 +56,9 @@ void LCD_TASK_ENTRY(void *argument)
   LCD_String(10,  265, "Up:", 16, WHITE, BLACK);
   LCD_String(100, 265, "Lo:", 16, WHITE, BLACK);
 
+  /* 计时器静态标签 */
+  LCD_String(10,  295, "Time:", 16, WHITE, BLACK);
+
   /* Infinite loop */
   for (;;)
   {
@@ -92,6 +96,13 @@ void LCD_TASK_ENTRY(void *argument)
     LCD_String(40,  265, buf, 16, GREEN, BLACK);
     sprintf(buf, "%u", servo_limits[cur_idx].lower_limit_deg);
     LCD_String(130, 265, buf, 16, GREEN, BLACK);
+
+    /* 计时器值刷新（DONE 时不刷新，保持最终值） */
+    if (calib_state != CALIB_IDLE && calib_state != CALIB_DONE) {
+        LCD_Fill(70, 295, 130, 310, BLACK);
+        sprintf(buf, "%lus", SweepTimer_GetElapsedSec());
+        LCD_String(70, 295, buf, 16, CYAN, BLACK);
+    }
 
     osDelay(500);
   }
