@@ -32,6 +32,14 @@ void App_sweep_task(void *argument)
       switch (calib_state)
       {
       case CALIB_IDLE:
+#if HW_CONFIG_LOW
+        if (IsServoSkipped(cur_idx)) {
+            servo_limits[cur_idx].upper_limit_deg = CALIB_HARD_MAX;
+            servo_limits[cur_idx].lower_limit_deg = CALIB_HARD_MIN;
+            calib_state = CALIB_NEXT_SERVO;
+            break;
+        }
+#endif
         cur_angle = servo_limits[cur_idx].center_deg;
         Servo_SendAngles((ServoChannel_t[]){{.channel = cur_idx, .angle = cur_angle}}, 1, 500);
         osDelay(500);
@@ -81,9 +89,14 @@ void App_sweep_task(void *argument)
         }
         break;
       case CALIB_NEXT_SERVO:
-        cur_angle = servo_limits[cur_idx].center_deg;
-        Servo_SendAngles((ServoChannel_t[]){{.channel = cur_idx, .angle = cur_angle}}, 1, 500);
-        osDelay(500);
+#if HW_CONFIG_LOW
+        if (!IsServoSkipped(cur_idx))
+#endif
+        {
+            cur_angle = servo_limits[cur_idx].center_deg;
+            Servo_SendAngles((ServoChannel_t[]){{.channel = cur_idx, .angle = cur_angle}}, 1, 500);
+            osDelay(500);
+        }
         cur_idx++;
         if (cur_idx < CALIB_SERVO_COUNT) {
             calib_state = CALIB_IDLE;

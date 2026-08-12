@@ -24,6 +24,26 @@
 #include "main.h"
 #include "bsp_log.h"
 
+#if HW_CONFIG_LOW
+/* Indices to skip on low-config hardware:
+   2: L_eyebrow_head_hor   3: R_eyebrow_head_hor
+   4: L_eyebrow_tail       5: R_eyebrow_tail
+   6: L_eyebrow_hor        7: R_eyebrow_hor
+  14: R_cheek             15: L_cheek
+  20: upper_lip           21: lower_lip                               */
+static const uint8_t skipped_servos[] = {2, 3, 4, 5, 6, 7, 14, 15, 20, 21};
+#define SKIP_COUNT  (sizeof(skipped_servos) / sizeof(skipped_servos[0]))
+
+uint8_t IsServoSkipped(uint8_t idx)
+{
+    uint8_t i;
+    for (i = 0; i < SKIP_COUNT; i++) {
+        if (skipped_servos[i] == idx) return 1;
+    }
+    return 0;
+}
+#endif
+
 /* Module state ---------------------------------------------------------------*/
 CalibState_t   calib_state   = CALIB_IDLE;
 uint8_t        cur_idx       = 0;

@@ -18,6 +18,13 @@ extern "C" {
 
 #include <stdint.h>
 
+/* ==========================================================================
+ *  Hardware configuration
+ *    0 = high (full 27 servos)
+ *    1 = low  (skip eyebrow_hor, eyebrow_tail, cheek, lip: 10 servos)
+ * ========================================================================== */
+#define HW_CONFIG_LOW           1
+
 /* Calibration constants ------------------------------------------------------*/
 #define CALIB_SERVO_COUNT       27       /* Total servos (A0 ~ A26)           */
 #define CALIB_MAX_IDX           26       /* Last valid index                  */
@@ -70,6 +77,15 @@ void Calib_ExportReport(void);
  * @note   Prints runtime-updated limits (from calibration), not static calib_results[]
  */
 void Calib_ExportServoLimits(void);
+
+#if HW_CONFIG_LOW
+/**
+ * @brief  Check if a servo index should be skipped on low-config hardware
+ * @param  idx: servo index (0 ~ 26)
+ * @return 1 if servo should be skipped, 0 otherwise
+ */
+uint8_t IsServoSkipped(uint8_t idx);
+#endif
 
 #ifdef __cplusplus
 }
