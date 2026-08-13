@@ -39,7 +39,7 @@ void LCD_TASK_ENTRY(void *argument)
   LCD_Fill(0, 0, LCD_GetWidth() - 1, LCD_GetHeight() - 1, BLACK);
 
   /* 标题 */
-  LCD_String(10, 10,  "Noetix Robotic", 16, YELLOW, BLACK);
+  LCD_String(10, 10,  "Noetix Robotics", 16, YELLOW, BLACK);
   LCD_Line(10, 35, 230, 35, BLUE);
 
   /* 静态标签 */
