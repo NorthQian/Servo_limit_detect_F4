@@ -34,13 +34,14 @@ extern "C" {
 
 extern TIM_HandleTypeDef htim7;
 
+extern TIM_HandleTypeDef htim10;
+
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */
 
-extern volatile uint32_t sweep_elapsed_seconds;
-
 void MX_TIM7_Init(void);
+void MX_TIM10_Init(void);
 
 /* USER CODE BEGIN Prototypes */
 

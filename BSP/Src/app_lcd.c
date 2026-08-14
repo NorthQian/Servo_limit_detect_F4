@@ -7,6 +7,9 @@
 #include "stdio.h"
 #include "cmsis_os2.h"
 #include "tim.h"
+#include "lvgl.h"
+#include "lv_demos.h"
+
 
 extern uint8_t cur_idx;
 extern uint16_t cur_angle;
@@ -30,6 +33,30 @@ void LCD_TASK_ENTRY(void *argument)
 {
   /* USER CODE BEGIN LCD_TASK_ENTRY */
 
+  /* ---- LVGL benchmark 演示 ---- */
+#if 0
+  /* 原简单 label 示例（保留备查） */
+  lv_obj_t *label_title = lv_label_create(lv_scr_act());
+  lv_label_set_text(label_title, "Noetix Robotics");
+  lv_obj_align(label_title, LV_ALIGN_CENTER, 0, -20);
+
+  lv_obj_t *label_status = lv_label_create(lv_scr_act());
+  lv_label_set_text(label_status, "LVGL OK");
+  lv_obj_align(label_status, LV_ALIGN_CENTER, 0, 20);
+#endif
+
+  /* 启动 benchmark 演示 */
+  lv_demo_benchmark();
+
+  /* LVGL 渲染循环（约 5ms 一次） */
+  for (;;)
+  {
+    lv_timer_handler();
+    osDelay(5);
+  }
+
+#if 0
+  /* ---- 原直接绘制代码（保留备查） ---- */
   char buf[32];
   float current;
 
@@ -106,5 +133,7 @@ void LCD_TASK_ENTRY(void *argument)
 
     osDelay(500);
   }
+#endif
+
   /* USER CODE END LCD_TASK_ENTRY */
 }

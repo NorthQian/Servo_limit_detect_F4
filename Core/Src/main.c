@@ -30,6 +30,8 @@
 #include "bsp_LCD_ILI9341.h"
 #include "SEGGER_RTT.h"
 #include "current.h"
+#include "lvgl.h"
+#include "lv_port_disp.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -100,11 +102,13 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
   MX_TIM7_Init();
+  MX_TIM10_Init();
   /* USER CODE BEGIN 2 */
-  LCD_Init();
-  Current_Init();
- 
-
+    LCD_Init();
+    Current_Init();
+    lv_init();
+    lv_port_disp_init();
+    HAL_TIM_Base_Start_IT(&htim10);   /* 1 kHz LVGL tick */
 
   /* USER CODE END 2 */
 
@@ -124,9 +128,9 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-      
-	}
-	
+
+    }
+
   /* USER CODE END 3 */
 }
 
@@ -197,10 +201,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     HAL_IncTick();
   }
   /* USER CODE BEGIN Callback 1 */
-  if (htim->Instance == TIM7)
-  {
-      sweep_elapsed_seconds++;
-  }
+
   /* USER CODE END Callback 1 */
 }
 

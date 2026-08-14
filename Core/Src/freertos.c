@@ -52,7 +52,7 @@ typedef StaticTask_t osStaticThreadDef_t;
 osThreadId_t LCD_TASKHandle;
 const osThreadAttr_t LCD_TASK_attributes = {
   .name = "LCD_TASK",
-  .stack_size = 256 * 4,
+  .stack_size = 1024 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for Current_Task */
