@@ -43,6 +43,7 @@
 "servo_limit_detect\segger_rtt_printf.o"
 "servo_limit_detect\ina229.o"
 "servo_limit_detect\bsp_lcd_ili9341.o"
+"servo_limit_detect\bsp_xpt2046.o"
 "servo_limit_detect\keys.o"
 "servo_limit_detect\servo.o"
 "servo_limit_detect\relay.o"

@@ -1470,6 +1470,11 @@
               <FilePath>..\BSP\Src\bsp_LCD_ILI9341.c</FilePath>
             </File>
             <File>
+              <FileName>bsp_XPT2046.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\BSP\Src\bsp_XPT2046.c</FilePath>
+            </File>
+            <File>
               <FileName>keys.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\BSP\Src\keys.c</FilePath>

@@ -45,8 +45,8 @@ void LCD_TASK_ENTRY(void *argument)
   lv_obj_align(label_status, LV_ALIGN_CENTER, 0, 20);
 #endif
 
-  /* 启动 benchmark 演示 */
-  lv_demo_benchmark();
+  /* 启动 widgets 演示 */
+  lv_demo_widgets();
 
   /* LVGL 渲染循环（约 5ms 一次） */
   for (;;)

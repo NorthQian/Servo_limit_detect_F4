@@ -32,6 +32,7 @@
 #include "current.h"
 #include "lvgl.h"
 #include "lv_port_disp.h"
+#include "lv_port_indev.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -108,6 +109,7 @@ int main(void)
     Current_Init();
     lv_init();
     lv_port_disp_init();
+    lv_port_indev_init();
     HAL_TIM_Base_Start_IT(&htim10);   /* 1 kHz LVGL tick */
 
   /* USER CODE END 2 */
