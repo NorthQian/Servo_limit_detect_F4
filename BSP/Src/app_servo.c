@@ -23,7 +23,7 @@ void App_sweep_task(void *argument)
   osSemaphoreAcquire(Key2SemaHandle, osWaitForever);
   osSemaphoreAcquire(Key3SemaHandle, 0); /* 清除检测前误触发的 KEY3 */
   SweepTimer_Start();
-  HAL_GPIO_WritePin(LED_BLUE_GPIO_Port, LED_BLUE_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(LED_BLUE_GPIO_Port, LED_BLUE_Pin, GPIO_PIN_SET); /* 扫频中：蓝灯亮 */
   /* Infinite loop */
   for (;;)
   {
@@ -113,6 +113,7 @@ void App_sweep_task(void *argument)
               total_time_s = SweepTimer_GetElapsedSec();
               Calib_ExportServoLimits();
               PrintLog("Sweep total time: %lus\r\n", total_time_s);
+              HAL_GPIO_WritePin(LED_BLUE_GPIO_Port, LED_BLUE_Pin, GPIO_PIN_RESET); /* 扫频完成：蓝灯灭 */
               reported = 1;
           }
           else if (osSemaphoreAcquire(Key3SemaHandle, 0) == osOK) {

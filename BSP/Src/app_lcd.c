@@ -1,5 +1,4 @@
 #include "app_lcd.h"
-#include "app_relay.h"
 #include "bsp_LCD_ILI9341.h"
 #include "current.h"
 #include "servo_calib.h"
@@ -37,9 +36,12 @@ static const char *CalibState_ToStr(CalibState_t s)
 }
 
 /* ---- UI 控件句柄 ---- */
-static lv_obj_t *lbl_current;
-static lv_obj_t *lbl_relay;
+static lv_obj_t *meter_cur;             /* 电流表盘 */
+static lv_obj_t *lbl_meter_val;         /* 表盘中心数值 "0.0000 A" */
+static lv_meter_indicator_t *meter_cur_needle;
+static int32_t meter_needle_cur = 0;    /* 指针动画起始值 */
 static lv_obj_t *lbl_state;
+static lv_obj_t *lbl_state_dot;      /* 状态同色圆点 */
 static lv_obj_t *lbl_ch;
 static lv_obj_t *lbl_deg;
 static lv_obj_t *lbl_up;
@@ -49,81 +51,188 @@ static lv_obj_t *bar_calib;
 static lv_obj_t *lbl_calib_ratio;   /* 显示 "3/17" 之类 */
 
 static char g_buf[32];
+static char meter_tick_label[8];   /* 表盘刻度标签临时缓冲区（安培一位小数） */
 
-static lv_obj_t *ui_make_label(const char *txt, lv_coord_t x, lv_coord_t y,
+static lv_obj_t *ui_make_label(lv_obj_t *parent, const char *txt, lv_coord_t x, lv_coord_t y,
                                const lv_font_t *font, lv_color_t color)
 {
-  lv_obj_t *lbl = lv_label_create(lv_scr_act());
+  lv_obj_t *lbl = lv_label_create(parent);
   lv_label_set_text(lbl, txt);
   lv_obj_set_pos(lbl, x, y);
   lv_obj_set_style_text_font(lbl, font, 0);
   lv_obj_set_style_text_color(lbl, color, 0);
   return lbl;
+}  
+
+/* 圆角白卡片（信息分组背景） */
+static lv_obj_t *ui_make_card(lv_coord_t x, lv_coord_t y, lv_coord_t w, lv_coord_t h)
+{
+  lv_obj_t *card = lv_obj_create(lv_scr_act());
+  lv_obj_set_size(card, w, h);
+  lv_obj_set_pos(card, x, y);
+  lv_obj_set_style_bg_color(card, lv_color_white(), 0);
+  lv_obj_set_style_radius(card, 8, 0);
+  lv_obj_set_style_border_color(card, lv_color_hex(0xD8D8D8), 0);
+  lv_obj_set_style_border_width(card, 1, 0);
+  lv_obj_set_style_pad_all(card, 0, 0);
+  lv_obj_set_style_shadow_color(card, lv_color_black(), 0);
+  lv_obj_set_style_shadow_width(card, 6, 0);
+  lv_obj_set_style_shadow_opa(card, LV_OPA_20, 0);
+  lv_obj_set_style_shadow_ofs_y(card, 2, 0);
+  return card;
+}
+
+/* 状态文字/圆点配色：按扫频阶段区分 */
+static lv_color_t state_color(CalibState_t s)
+{
+  switch (s)
+  {
+  case CALIB_IDLE:        return lv_palette_main(LV_PALETTE_GREEN);
+  case CALIB_SEARCH_UP:   return lv_palette_main(LV_PALETTE_BLUE);
+  case CALIB_SEARCH_DOWN: return lv_palette_main(LV_PALETTE_BLUE);
+  case CALIB_TRANSITION:  return lv_palette_main(LV_PALETTE_ORANGE);
+  case CALIB_NEXT_SERVO:  return lv_palette_main(LV_PALETTE_AMBER);
+  case CALIB_DONE:        return lv_palette_main(LV_PALETTE_PURPLE);
+  default:                return lv_palette_main(LV_PALETTE_GREY);
+  }
+}
+
+/* 表盘刻度标签：内部 0~2000(mA) → 按安培一位小数显示（0.0/0.5/1.0/1.5/2.0） */
+static void meter_scale_event_cb(lv_event_t *e)
+{
+  if (lv_event_get_code(e) == LV_EVENT_DRAW_PART_BEGIN) {
+    lv_obj_draw_part_dsc_t *p = lv_event_get_param(e);
+    /* 仅主刻度（带标签，text 非空）改写文本；次要刻度 text 为 NULL */
+    if (p->part == LV_PART_TICKS && p->type == LV_METER_DRAW_PART_TICK && p->text != NULL) {
+      sprintf(meter_tick_label, "%d.%d",
+              (int)(p->value / 1000), (int)((p->value / 100) % 10));
+      p->text = meter_tick_label;
+    }
+  }
 }
 
 static void ui_create(void)
 {
   lv_obj_t *scr = lv_scr_act();
-  lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
+  lv_obj_set_style_bg_color(scr, lv_palette_lighten(LV_PALETTE_GREY, 4), 0);   /* 浅色主题：浅灰底 */
 
-  ui_make_label("Noetix Robotics", 10, 10, &lv_font_montserrat_18,
-                lv_palette_main(LV_PALETTE_YELLOW));
+  /* 电流表盘（lv_meter 指针式仪表，量程 0~2000mA） */
+  meter_cur = lv_meter_create(scr);
+  lv_obj_set_size(meter_cur, 140, 140);
+  lv_obj_set_pos(meter_cur, 50, 15);
+  lv_obj_add_flag(meter_cur, LV_OBJ_FLAG_OVERFLOW_VISIBLE);   /* 防刻度标签被裁剪 */
+  lv_obj_set_style_pad_all(meter_cur, 5, LV_PART_MAIN);       /* 收窄内边距，表盘更大 */
 
-  lbl_current = ui_make_label("I = 0.0000 A", 10, 55, &lv_font_montserrat_18,
-                              lv_palette_main(LV_PALETTE_GREEN));
+  lv_meter_scale_t *scale = lv_meter_add_scale(meter_cur);
+  lv_meter_set_scale_range(meter_cur, scale, 0, 2000, 270, 135);   /* 0~2000mA, 270° 弧 */
+  lv_meter_set_scale_ticks(meter_cur, scale, 21, 2, 8, lv_palette_main(LV_PALETTE_GREY));
+  lv_meter_set_scale_major_ticks(meter_cur, scale, 5, 3, 12, lv_color_hex(0x333333), 8);
+  /* 刻度值：黑字 12 号，浅色底上清晰 */
+  lv_obj_set_style_text_color(meter_cur, lv_color_black(), LV_PART_TICKS);
+  lv_obj_set_style_text_font(meter_cur, &lv_font_montserrat_12, LV_PART_TICKS);
+  /* 刻度标签改为安培一位小数显示 */
+  lv_obj_add_event_cb(meter_cur, meter_scale_event_cb, LV_EVENT_DRAW_PART_BEGIN, NULL);
 
-  ui_make_label("Relay:", 10, 110, &lv_font_montserrat_14, lv_color_white());
-  lbl_relay = ui_make_label("OFF", 90, 110, &lv_font_montserrat_14,
-                            lv_palette_main(LV_PALETTE_RED));
+  meter_cur_needle = lv_meter_add_needle_line(meter_cur, scale, 3,
+                        lv_palette_main(LV_PALETTE_BLUE), -12);
+  lv_meter_set_indicator_value(meter_cur, meter_cur_needle, 0);
 
-  ui_make_label("State:", 10, 140, &lv_font_montserrat_14, lv_color_white());
-  lbl_state = ui_make_label("IDLE", 90, 140, &lv_font_montserrat_14,
+  /* 分区着色：低电流绿(0~0.6A) / 中电流黄(0.6~1A) / 高电流红(1~2A) */
+  lv_meter_indicator_t *zone;
+  zone = lv_meter_add_scale_lines(meter_cur, scale, lv_palette_main(LV_PALETTE_GREEN),
+                                  lv_palette_main(LV_PALETTE_GREEN), false, 0);
+  lv_meter_set_indicator_start_value(meter_cur, zone, 0);
+  lv_meter_set_indicator_end_value(meter_cur, zone, 600);
+  zone = lv_meter_add_arc(meter_cur, scale, 3, lv_palette_main(LV_PALETTE_GREEN), 0);
+  lv_meter_set_indicator_start_value(meter_cur, zone, 0);
+  lv_meter_set_indicator_end_value(meter_cur, zone, 600);
+
+  zone = lv_meter_add_scale_lines(meter_cur, scale, lv_palette_darken(LV_PALETTE_YELLOW, 1),
+                                  lv_palette_darken(LV_PALETTE_YELLOW, 1), false, 0);
+  lv_meter_set_indicator_start_value(meter_cur, zone, 600);
+  lv_meter_set_indicator_end_value(meter_cur, zone, 1000);
+  zone = lv_meter_add_arc(meter_cur, scale, 3, lv_palette_darken(LV_PALETTE_YELLOW, 1), 0);
+  lv_meter_set_indicator_start_value(meter_cur, zone, 600);
+  lv_meter_set_indicator_end_value(meter_cur, zone, 1000);
+
+  zone = lv_meter_add_scale_lines(meter_cur, scale, lv_palette_main(LV_PALETTE_RED),
+                                  lv_palette_main(LV_PALETTE_RED), false, 0);
+  lv_meter_set_indicator_start_value(meter_cur, zone, 1000);
+  lv_meter_set_indicator_end_value(meter_cur, zone, 2000);
+  zone = lv_meter_add_arc(meter_cur, scale, 3, lv_palette_main(LV_PALETTE_RED), 0);
+  lv_meter_set_indicator_start_value(meter_cur, zone, 1000);
+  lv_meter_set_indicator_end_value(meter_cur, zone, 2000);
+
+  /* 指针轴心圆（LV_PART_INDICATOR），参照 lv_demo_widgets.c 的 needle pivot */
+  lv_obj_set_style_size(meter_cur, 10, LV_PART_INDICATOR);
+  lv_obj_set_style_radius(meter_cur, LV_RADIUS_CIRCLE, LV_PART_INDICATOR);
+  lv_obj_set_style_bg_opa(meter_cur, LV_OPA_COVER, LV_PART_INDICATOR);
+  lv_obj_set_style_bg_color(meter_cur, lv_palette_main(LV_PALETTE_BLUE), LV_PART_INDICATOR);
+
+  lbl_meter_val = lv_label_create(meter_cur);
+  lv_label_set_text(lbl_meter_val, "0.00");
+  lv_obj_align(lbl_meter_val, LV_ALIGN_CENTER, 0, 40);   /* 轴心下方，弧线空档处 */
+  lv_obj_set_style_text_font(lbl_meter_val, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_color(lbl_meter_val, lv_palette_darken(LV_PALETTE_GREEN, 2), 0);
+
+  /* ---- 卡1：状态 + 扫频进度 ---- */
+  lv_obj_t *card1 = ui_make_card(10, 166, 220, 58);
+
+  lbl_state_dot = lv_obj_create(card1);                      /* 状态同色圆点 */
+  lv_obj_set_size(lbl_state_dot, 8, 8);
+  lv_obj_set_pos(lbl_state_dot, 12, 12);
+  lv_obj_set_style_radius(lbl_state_dot, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_opa(lbl_state_dot, LV_OPA_COVER, 0);
+  lv_obj_set_style_bg_color(lbl_state_dot, lv_palette_main(LV_PALETTE_GREEN), 0);
+  lv_obj_set_style_border_width(lbl_state_dot, 0, 0);
+  lv_obj_set_style_pad_all(lbl_state_dot, 0, 0);
+
+  lbl_state = ui_make_label(card1, "IDLE", 26, 8, &lv_font_montserrat_14,
                             lv_palette_main(LV_PALETTE_GREEN));
 
-  /* 校准进度条（替换原 "CALIB" 字样） */
-  bar_calib = lv_bar_create(scr);
-  lv_obj_set_size(bar_calib, 175, 14);
-  lv_obj_set_pos(bar_calib, 10, 180);
+  bar_calib = lv_bar_create(card1);                          /* 胶囊进度条 */
+  lv_obj_set_size(bar_calib, 140, 16);
+  lv_obj_set_pos(bar_calib, 12, 30);
   lv_bar_set_range(bar_calib, 0, 100);
   lv_bar_set_value(bar_calib, 0, LV_ANIM_OFF);
-  lv_obj_set_style_bg_color(bar_calib, lv_color_black(), LV_PART_MAIN);
+  lv_obj_set_style_radius(bar_calib, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+  lv_obj_set_style_radius(bar_calib, LV_RADIUS_CIRCLE, LV_PART_INDICATOR);
+  lv_obj_set_style_bg_color(bar_calib, lv_color_hex(0xE0E0E0), LV_PART_MAIN);
   lv_obj_set_style_border_color(bar_calib, lv_palette_main(LV_PALETTE_BLUE), LV_PART_MAIN);
   lv_obj_set_style_border_width(bar_calib, 1, LV_PART_MAIN);
-  lv_obj_set_style_bg_color(bar_calib, lv_palette_main(LV_PALETTE_YELLOW), LV_PART_INDICATOR);
-  lbl_calib_ratio = ui_make_label("0/17", 190, 180, &lv_font_montserrat_14,
-                                  lv_palette_main(LV_PALETTE_YELLOW));
+  lv_obj_set_style_bg_color(bar_calib, lv_palette_main(LV_PALETTE_GREEN), LV_PART_INDICATOR);
+  lbl_calib_ratio = ui_make_label(card1, "0/17", 160, 32, &lv_font_montserrat_14,
+                                  lv_palette_darken(LV_PALETTE_GREEN, 2));
 
-  ui_make_label("CH:", 10, 210, &lv_font_montserrat_18, lv_color_white());
-  lbl_ch = ui_make_label("0", 55, 210, &lv_font_montserrat_18,
-                         lv_palette_main(LV_PALETTE_GREEN));
-  ui_make_label("Deg:", 100, 210, &lv_font_montserrat_18, lv_color_white());
-  lbl_deg = ui_make_label("0", 165, 210, &lv_font_montserrat_18,
-                          lv_palette_main(LV_PALETTE_GREEN));
+  /* ---- 卡2：CH / Deg / Up / Lo / Time ---- */
+  lv_obj_t *card2 = ui_make_card(10, 230, 220, 80);
 
-  ui_make_label("Up:", 10, 245, &lv_font_montserrat_14, lv_color_white());
-  lbl_up = ui_make_label("0", 40, 245, &lv_font_montserrat_14,
-                         lv_palette_main(LV_PALETTE_GREEN));
-  ui_make_label("Lo:", 100, 245, &lv_font_montserrat_14, lv_color_white());
-  lbl_lo = ui_make_label("0", 130, 245, &lv_font_montserrat_14,
-                         lv_palette_main(LV_PALETTE_GREEN));
+  ui_make_label(card2, "CH:", 12, 8, &lv_font_montserrat_18, lv_color_black());
+  lbl_ch = ui_make_label(card2, "0", 55, 8, &lv_font_montserrat_18,
+                         lv_palette_darken(LV_PALETTE_GREEN, 2));
+  ui_make_label(card2, "Deg:", 105, 8, &lv_font_montserrat_18, lv_color_black());
+  lbl_deg = ui_make_label(card2, "0", 165, 8, &lv_font_montserrat_18,
+                          lv_palette_darken(LV_PALETTE_GREEN, 2));
 
-  ui_make_label("Time:", 10, 285, &lv_font_montserrat_14, lv_color_white());
-  lbl_time = ui_make_label("0s", 70, 285, &lv_font_montserrat_14,
-                           lv_palette_main(LV_PALETTE_CYAN));
+  ui_make_label(card2, "Up:", 12, 34, &lv_font_montserrat_14, lv_color_black());
+  lbl_up = ui_make_label(card2, "0", 40, 34, &lv_font_montserrat_14,
+                         lv_palette_darken(LV_PALETTE_GREEN, 2));
+  ui_make_label(card2, "Lo:", 105, 34, &lv_font_montserrat_14, lv_color_black());
+  lbl_lo = ui_make_label(card2, "0", 130, 34, &lv_font_montserrat_14,
+                         lv_palette_darken(LV_PALETTE_GREEN, 2));
+
+  ui_make_label(card2, "Time:", 12, 54, &lv_font_montserrat_14, lv_color_black());
+  lbl_time = ui_make_label(card2, "0s", 70, 54, &lv_font_montserrat_14,
+                           lv_palette_darken(LV_PALETTE_CYAN, 3));
 }
 
 static void ui_update_cb(lv_timer_t *timer)
 {
   (void)timer;
 
-  sprintf(g_buf, "I = %.4f A", Current_GetValue());
-  lv_label_set_text(lbl_current, g_buf);
-
-  lv_label_set_text(lbl_relay, Relay_GetState() ? "ON" : "OFF");
-  lv_obj_set_style_text_color(lbl_relay,
-      Relay_GetState() ? lv_palette_main(LV_PALETTE_GREEN)
-                       : lv_palette_main(LV_PALETTE_RED), 0);
-
+  lv_color_t st_col = state_color(calib_state);
+  lv_obj_set_style_bg_color(lbl_state_dot, st_col, 0);
+  lv_obj_set_style_text_color(lbl_state, st_col, 0);
   lv_label_set_text(lbl_state, CalibState_ToStr(calib_state));
 
   sprintf(g_buf, "%u", (unsigned)cur_idx);
@@ -153,6 +262,29 @@ static void ui_update_cb(lv_timer_t *timer)
   }
 }
 
+static void meter_needle_anim_cb(void *var, int32_t v)
+{
+    lv_meter_set_indicator_value(meter_cur, var, v);
+}
+
+static void meter_update_cb(lv_timer_t *timer)
+{
+    (void)timer;
+    int32_t target = (int32_t)(Current_GetValue() * 1000.0f);
+    lv_anim_del(meter_cur_needle, meter_needle_anim_cb);   /* 取消上一个动画 */
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, meter_cur_needle);
+    lv_anim_set_exec_cb(&a, meter_needle_anim_cb);
+    lv_anim_set_values(&a, meter_needle_cur, target);
+    lv_anim_set_time(&a, 300);
+    lv_anim_start(&a);
+    meter_needle_cur = target;
+
+    sprintf(g_buf, "%.2f", Current_GetValue());
+    lv_label_set_text(lbl_meter_val, g_buf);
+}
+
 void LCD_TASK_ENTRY(void *argument)
 {
   /* USER CODE BEGIN LCD_TASK_ENTRY */
@@ -160,6 +292,7 @@ void LCD_TASK_ENTRY(void *argument)
   /* ---- LVGL 显示（当前生效） ---- */
   ui_create();
   lv_timer_create(ui_update_cb, 500, NULL);
+  lv_timer_create(meter_update_cb, 200, NULL);
 
   /* ---- LVGL benchmark 演示 ---- */
 #if 0
