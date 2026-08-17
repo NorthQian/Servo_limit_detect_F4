@@ -193,3 +193,35 @@ void Calib_ExportServoLimits(void)
     PrintLog(
         "============================================================\r\n\r\n");
 }
+
+/**
+ * @brief  已完成且未跳过的舵机数（进度条用）
+ * @note   扫到 CALIB_DONE 时 cur_idx==CALIB_SERVO_COUNT，返回扣除跳过后的总数
+ */
+uint8_t Calib_GetSweptCount(void)
+{
+    uint8_t i, n = 0;
+    for (i = 0; i < cur_idx && i < CALIB_SERVO_COUNT; i++) {
+#if HW_CONFIG_LOW
+        if (IsServoSkipped(i)) continue;
+#endif
+        n++;
+    }
+    return n;
+}
+
+/**
+ * @brief  总扫频舵机数（已扣除跳过的舵机）
+ * @note   HW_CONFIG_LOW 下返回 27 - 10 = 17
+ */
+uint8_t Calib_GetTotalSweptCount(void)
+{
+    uint8_t i, n = 0;
+    for (i = 0; i < CALIB_SERVO_COUNT; i++) {
+#if HW_CONFIG_LOW
+        if (IsServoSkipped(i)) continue;
+#endif
+        n++;
+    }
+    return n;
+}

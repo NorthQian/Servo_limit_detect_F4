@@ -21,6 +21,7 @@ void App_sweep_task(void *argument)
 {
   /* USER CODE BEGIN App_sweep_task */
   osSemaphoreAcquire(Key2SemaHandle, osWaitForever);
+  osSemaphoreAcquire(Key3SemaHandle, 0); /* 清除检测前误触发的 KEY3 */
   SweepTimer_Start();
   HAL_GPIO_WritePin(LED_BLUE_GPIO_Port, LED_BLUE_Pin, GPIO_PIN_RESET);
   /* Infinite loop */
@@ -107,12 +108,17 @@ void App_sweep_task(void *argument)
       case CALIB_DONE:
       {
           static uint8_t reported = 0;
+          static uint32_t total_time_s = 0;
           if (!reported) {
+              total_time_s = SweepTimer_GetElapsedSec();
               Calib_ExportServoLimits();
-              {
-                  PrintLog("Sweep total time: %lus\r\n", SweepTimer_GetElapsedSec());
-              }
+              PrintLog("Sweep total time: %lus\r\n", total_time_s);
               reported = 1;
+          }
+          else if (osSemaphoreAcquire(Key3SemaHandle, 0) == osOK) {
+              /* 检测完成后按 KEY3：再次上传标定结果 */
+              Calib_ExportServoLimits();
+              PrintLog("Sweep total time: %lus\r\n", total_time_s);
           }
           osDelay(100);
           break;

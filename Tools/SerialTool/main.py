@@ -15,8 +15,15 @@ from PyQt5.QtWidgets import (
     QGroupBox, QLabel, QComboBox, QPushButton, QTextEdit,
     QMessageBox, QFileDialog, QGridLayout, QLineEdit
 )
-from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtCore import QThread, QTimer, pyqtSignal
 from PyQt5.QtSerialPort import QSerialPort, QSerialPortInfo
+
+
+# ─── 接收性能参数 ────────────────────────────────────────────────
+# 防止长时间接收后 received_text 无限增长，拖慢每次的 UI 刷新与正则检索。
+_RECEIVED_TEXT_LIMIT = 256 * 1024   # 超过此大小开始截断
+_RECEIVED_TEXT_KEEP  = 64 * 1024    # 截断后仅保留尾部（足以容纳完整表格）
+_UI_FLUSH_INTERVAL_MS = 80          # QTextEdit 批量刷盘间隔，合并多次 readyRead
 
 
 # ─── 串口接收线程 ────────────────────────────────────────────────
@@ -71,6 +78,10 @@ class MainWindow(QMainWindow):
 
         self.worker: SerialWorker | None = None
         self.received_text = ""
+        self._rx_pending: list[str] = []   # 待批量刷入 QTextEdit 的文本
+        self._rx_flush_timer = QTimer(self)
+        self._rx_flush_timer.setInterval(_UI_FLUSH_INTERVAL_MS)
+        self._rx_flush_timer.timeout.connect(self._flush_rx_text)
         self.parsed_servos: dict[int, dict] = {}   # idx → {channel, center, lower, upper}
         self.total_time = ""
         self.template_data: dict | None = None
@@ -127,11 +138,13 @@ class MainWindow(QMainWindow):
         self.text_rx = QTextEdit()
         self.text_rx.setReadOnly(True)
         self.text_rx.setFontFamily("Consolas")
+        # 限制文档块数，避免长时间接收后 QTextEdit 渲染越来越卡
+        self.text_rx.document().setMaximumBlockCount(5000)
         rx_layout.addWidget(self.text_rx)
 
         btn_row = QHBoxLayout()
         self.btn_clear = QPushButton("清空")
-        self.btn_clear.clicked.connect(lambda: self.text_rx.clear())
+        self.btn_clear.clicked.connect(self._clear_rx)
         btn_row.addWidget(self.btn_clear)
 
         btn_row.addStretch()
@@ -170,6 +183,7 @@ class MainWindow(QMainWindow):
     # ── 打开/关闭串口 ───────────────────────────────────────────
     def _toggle_serial(self):
         if self.worker and self.worker.isRunning():
+            self._flush_rx_text()   # 关闭前把残留缓冲刷完
             self.worker.stop()
             self.worker = None
             self.btn_open.setText("打开串口")
@@ -195,12 +209,37 @@ class MainWindow(QMainWindow):
         except Exception:
             return
 
+        # 原始缓冲仅用于正则解析，限制其大小避免无限增长
+        self.received_text += text
+        if len(self.received_text) > _RECEIVED_TEXT_LIMIT:
+            self.received_text = self.received_text[-_RECEIVED_TEXT_KEEP:]
+
+        # 文本先入待刷缓冲，按固定间隔批量写入 QTextEdit（减少重绘次数）
+        self._rx_pending.append(text)
+        if not self._rx_flush_timer.isActive():
+            self._rx_flush_timer.start()
+
+        self._try_parse()
+
+    def _flush_rx_text(self):
+        """把攒下的文本一次性写入 QTextEdit，避免逐小段插入触发大量重绘。"""
+        self._rx_flush_timer.stop()
+        if not self._rx_pending:
+            return
+
+        text = "".join(self._rx_pending)
+        self._rx_pending.clear()
+
         self.text_rx.moveCursor(self.text_rx.textCursor().End)
         self.text_rx.insertPlainText(text)
-        self.text_rx.moveCursor(self.text_rx.textCursor().End)
+        bar = self.text_rx.verticalScrollBar()
+        bar.setValue(bar.maximum())   # 跟随最新数据
 
-        self.received_text += text
-        self._try_parse()
+    def _clear_rx(self):
+        self._rx_flush_timer.stop()
+        self._rx_pending.clear()
+        self.received_text = ""
+        self.text_rx.clear()
 
     # ── 解析 servo_limits 表格 ──────────────────────────────────
     def _try_parse(self):
@@ -215,6 +254,10 @@ class MainWindow(QMainWindow):
             r"\s*Total:\s*\d+\s+servos\s*\r?\n"
             r"={5,}"
         )
+
+        # 快速失败：缓冲区里没有表格起始标记就不做完整正则
+        if "=====" not in self.received_text:
+            return
 
         match = re.search(pattern, self.received_text)
         if not match:
@@ -241,6 +284,9 @@ class MainWindow(QMainWindow):
             time_match = re.search(r"Sweep total time:\s*(\d+)s", self.received_text)
             if time_match:
                 self.total_time = time_match.group(1)
+
+            # 解析成功即可收窄原始缓冲，之后的表格只需小范围正则
+            self.received_text = self.received_text[match.end():]
 
     # ── 导出 YAML ───────────────────────────────────────────────
     def _export_yaml(self):

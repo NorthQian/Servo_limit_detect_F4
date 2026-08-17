@@ -78,6 +78,18 @@ void Calib_ExportReport(void);
  */
 void Calib_ExportServoLimits(void);
 
+/**
+ * @brief  已完成且未跳过的舵机数（进度条用）
+ * @return 0 ~ 扣除跳过后的总数
+ */
+uint8_t Calib_GetSweptCount(void);
+
+/**
+ * @brief  总扫频舵机数（已扣除跳过的舵机）
+ * @return HW_CONFIG_LOW 下为 CALIB_SERVO_COUNT - SKIP_COUNT
+ */
+uint8_t Calib_GetTotalSweptCount(void);
+
 #if HW_CONFIG_LOW
 /**
  * @brief  Check if a servo index should be skipped on low-config hardware
