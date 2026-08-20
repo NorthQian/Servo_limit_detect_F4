@@ -54,6 +54,7 @@
 "servo_limit_detect\app_relay.o"
 "servo_limit_detect\servo_calib.o"
 "servo_limit_detect\app_servo.o"
+"servo_limit_detect\machine.o"
 "servo_limit_detect\lv_disp.o"
 "servo_limit_detect\lv_event.o"
 "servo_limit_detect\lv_group.o"

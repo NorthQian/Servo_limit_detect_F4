@@ -23,100 +23,22 @@
 #include "current.h"
 #include "main.h"
 #include "bsp_log.h"
-
-#if HW_CONFIG_LOW
-/* Indices to skip on low-config hardware:
-   2: L_eyebrow_head_hor   3: R_eyebrow_head_hor
-   4: L_eyebrow_tail       5: R_eyebrow_tail
-   6: L_eyebrow_hor        7: R_eyebrow_hor
-  14: R_cheek             15: L_cheek
-  20: upper_lip           21: lower_lip                               */
-static const uint8_t skipped_servos[] = {2, 3, 4, 5, 6, 7, 14, 15, 20, 21};
-#define SKIP_COUNT  (sizeof(skipped_servos) / sizeof(skipped_servos[0]))
-
-uint8_t IsServoSkipped(uint8_t idx)
-{
-    uint8_t i;
-    for (i = 0; i < SKIP_COUNT; i++) {
-        if (skipped_servos[i] == idx) return 1;
-    }
-    return 0;
-}
-#endif
+#include "machine.h"
 
 /* Module state ---------------------------------------------------------------*/
 CalibState_t   calib_state   = CALIB_IDLE;
 uint8_t        cur_idx       = 0;
 uint16_t       cur_angle     = 0;
+uint8_t        calib_report_pending = 0;   /* 1 = DONE report already printed */
 uint32_t       move_end_tick = 0;
 uint32_t       blank_until   = 0;
 uint32_t       stall_start   = 0;
 uint8_t        stall_armed   = 0;
 
 /* Servo calibration table ----------------------------------------------------*/
-/*
- * Center angles are sourced from servo_config.h servo_param[].temp_deg.
- * Update here if servo_config.h changes.
- *
- *   idx  ch  center  name
- *   ---  --  ------  --------------------
- *    0    0    135   L_eyebrow_head_ver
- *    1    1    135   R_eyebrow_head_ver
- *    2    2    135   L_eyebrow_head_hor
- *    3    3    135   R_eyebrow_head_hor
- *    4    4    135   L_eyebrow_tail
- *    5    5    135   R_eyebrow_tail
- *    6    6    135   L_eyebrow_hor
- *    7    7    135   R_eyebrow_hor
- *    8    8    140   L_upper_eyelid
- *    9    9    125   R_upper_eyelid
- *   10   10    135   L_vertical_eyeball
- *   11   11    135   R_vertical_eyeball
- *   12   12    135   L_horizontal_eyeball
- *   13   13    135   R_horizontal_eyeball
- *   14   14    135   R_cheek
- *   15   15    135   L_cheek
- *   16   16    147   mid_upper_lip_ver
- *   17   17    190   mid_upper_lip_hor
- *   18   18    165   mid_lower_lip_hor
- *   19   19    155   mid_lower_lip_ver
- *   20   20    115   upper_lip
- *   21   21    105   lower_lip
- *   22   22    135   R_upper_mouth
- *   23   23    135   L_lower_mouth
- *   24   24    130   L_upper_mouth
- *   25   25    135   R_lower_mouth
- *   26   26     95   chin_vertical
- */
-CalibEntry_t calib_results[CALIB_SERVO_COUNT] = {
-    { .channel =  0, .center = 135, .thre_current = 0.8f },
-    { .channel =  1, .center = 135, .thre_current = 0.8f },
-    { .channel =  2, .center = 135, .thre_current = 0.8f },
-    { .channel =  3, .center = 135, .thre_current = 0.8f },
-    { .channel =  4, .center = 135, .thre_current = 0.8f },
-    { .channel =  5, .center = 135, .thre_current = 0.8f },
-    { .channel =  6, .center = 135, .thre_current = 0.8f },
-    { .channel =  7, .center = 135, .thre_current = 0.8f },
-    { .channel =  8, .center = 140, .thre_current = 0.8f },
-    { .channel =  9, .center = 125, .thre_current = 0.8f },
-    { .channel = 10, .center = 135, .thre_current = 0.8f },
-    { .channel = 11, .center = 135, .thre_current = 0.8f },
-    { .channel = 12, .center = 135, .thre_current = 0.8f },
-    { .channel = 13, .center = 135, .thre_current = 0.8f },
-    { .channel = 14, .center = 135, .thre_current = 0.8f },
-    { .channel = 15, .center = 135, .thre_current = 0.8f },
-    { .channel = 16, .center = 147, .thre_current = 0.8f },
-    { .channel = 17, .center = 190, .thre_current = 0.8f },
-    { .channel = 18, .center = 165, .thre_current = 0.8f },
-    { .channel = 19, .center = 155, .thre_current = 0.8f },
-    { .channel = 20, .center = 115, .thre_current = 0.8f },
-    { .channel = 21, .center = 105, .thre_current = 0.8f },
-    { .channel = 22, .center = 135, .thre_current = 0.8f },
-    { .channel = 23, .center = 135, .thre_current = 0.8f },
-    { .channel = 24, .center = 130, .thre_current = 0.8f },
-    { .channel = 25, .center = 135, .thre_current = 0.8f },
-    { .channel = 26, .center =  95, .thre_current = 0.8f },
-};
+/* Refilled at boot and on machine switch by machine_refill() (machine.c) from
+   the active profile's params. Values here are the pre-switch defaults.       */
+CalibEntry_t calib_results[MACHINE_MAX_SERVOS];
 
 
 /**
@@ -139,7 +61,7 @@ void Calib_ExportReport(void)
     PrintLog(
         "------------------------------------------------------------\r\n");
 
-    for (i = 0; i < CALIB_SERVO_COUNT; i++) {
+    for (i = 0; i < Machine_GetServoNum(); i++) {
         CalibEntry_t *e = &calib_results[i];
         PrintLog(
             "  A%-3d  %02d   %-6d %-6d %-6d %s\r\n",
@@ -150,7 +72,7 @@ void Calib_ExportReport(void)
     PrintLog(
         "============================================================\r\n");
     PrintLog(
-        "  Total: %d servos calibrated\r\n", CALIB_SERVO_COUNT);
+        "  Total: %d servos calibrated\r\n", Machine_GetServoNum());
     PrintLog(
         "============================================================\r\n\r\n");
 }
@@ -176,7 +98,7 @@ void Calib_ExportServoLimits(void)
     PrintLog(
         "------------------------------------------------------------\r\n");
 
-    for (i = 0; i < SERVO_NUM; i++) {
+    for (i = 0; i < Machine_GetServoNum(); i++) {
         PrintLog(
             "  %-4d  %02d   %-6d %-6d %-6d\r\n",
             i,
@@ -189,39 +111,47 @@ void Calib_ExportServoLimits(void)
     PrintLog(
         "============================================================\r\n");
     PrintLog(
-        "  Total: %d servos\r\n", SERVO_NUM);
+        "  Total: %d servos\r\n", Machine_GetServoNum());
     PrintLog(
         "============================================================\r\n\r\n");
 }
 
 /**
  * @brief  已完成且未跳过的舵机数（进度条用）
- * @note   扫到 CALIB_DONE 时 cur_idx==CALIB_SERVO_COUNT，返回扣除跳过后的总数
+ * @note   扫到 CALIB_DONE 时 cur_idx 已达当前机型舵机数，返回扣除跳过后的总数
  */
 uint8_t Calib_GetSweptCount(void)
 {
     uint8_t i, n = 0;
-    for (i = 0; i < cur_idx && i < CALIB_SERVO_COUNT; i++) {
-#if HW_CONFIG_LOW
-        if (IsServoSkipped(i)) continue;
-#endif
+    for (i = 0; i < cur_idx && i < Machine_GetServoNum(); i++) {
+        if (Machine_IsServoSkipped(i)) continue;
         n++;
     }
     return n;
 }
 
 /**
- * @brief  总扫频舵机数（已扣除跳过的舵机）
- * @note   HW_CONFIG_LOW 下返回 27 - 10 = 17
+ * @brief  总扫频舵机数（已扣除当前机型跳过的舵机）
+ * @note   XHEADLITE 返回 27 - 10 = 17；XHEAD 27；V3.0 29
  */
 uint8_t Calib_GetTotalSweptCount(void)
 {
     uint8_t i, n = 0;
-    for (i = 0; i < CALIB_SERVO_COUNT; i++) {
-#if HW_CONFIG_LOW
-        if (IsServoSkipped(i)) continue;
-#endif
+    for (i = 0; i < Machine_GetServoNum(); i++) {
+        if (Machine_IsServoSkipped(i)) continue;
         n++;
     }
     return n;
+}
+
+/**
+ * @brief  Reset sweep state (calib_state/cur_idx/cur_angle/report flag)
+ * @note   Called by Machine_Switch() when the active machine changes.
+ */
+void Calib_ResetSweep(void)
+{
+    calib_state         = CALIB_IDLE;
+    cur_idx             = 0;
+    cur_angle           = 0;
+    calib_report_pending = 0;
 }

@@ -33,6 +33,7 @@
 #include "lvgl.h"
 #include "lv_port_disp.h"
 #include "lv_port_indev.h"
+#include "machine.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -111,6 +112,7 @@ int main(void)
     lv_port_disp_init();
     lv_port_indev_init();
     HAL_TIM_Base_Start_IT(&htim10);   /* 1 kHz LVGL tick */
+    Machine_Init();                   /* 默认机型 + 重建运行时表（任务启动前） */
 
   /* USER CODE END 2 */
 

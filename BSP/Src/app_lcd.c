@@ -3,16 +3,12 @@
 #include "current.h"
 #include "servo_calib.h"
 #include "servo.h"
+#include "machine.h"
 #include "stdio.h"
 #include "cmsis_os2.h"
 #include "tim.h"
 #include "lvgl.h"
 #include "lv_demos.h"
-
-extern uint8_t cur_idx;
-extern uint16_t cur_angle;
-extern CalibState_t calib_state;
-extern ServoLimit_t servo_limits[SERVO_NUM];
 
 static const char *CalibState_ToStr(CalibState_t s)
 {
@@ -49,6 +45,7 @@ static lv_obj_t *lbl_lo;
 static lv_obj_t *lbl_time;
 static lv_obj_t *bar_calib;
 static lv_obj_t *lbl_calib_ratio;   /* 显示 "3/17" 之类 */
+static lv_obj_t *btn_machine;       /* 顶部机型切换按钮 */
 
 static char g_buf[32];
 static char meter_tick_label[8];   /* 表盘刻度标签临时缓冲区（安培一位小数） */
@@ -111,15 +108,103 @@ static void meter_scale_event_cb(lv_event_t *e)
   }
 }
 
+/* 切换成功后立即刷新机型按钮文字 */
+static void machine_label_refresh(void)
+{
+  if (btn_machine) {
+    lv_obj_t *lbl = lv_obj_get_child(btn_machine, 0);
+    lv_label_set_text(lbl, Machine_GetCurrent()->name);
+  }
+}
+
+/* 机型选择 msgbox：LV_EVENT_VALUE_CHANGED —— 用户点中了某个机型
+   事件从内部按钮矩阵冒泡到 msgbox，需用 current_target 取到 msgbox 本身 */
+static void machine_msgbox_cb(lv_event_t *e)
+{
+  lv_obj_t *mbox = lv_event_get_current_target(e);
+  uint16_t ab = lv_msgbox_get_active_btn(mbox);
+  int r = Machine_Switch(ab);
+
+  if (r == 0) {
+    lv_msgbox_close(mbox);                 /* 切换成功：关菜单 */
+    machine_label_refresh();               /* 按钮文字更新为新机型 */
+  }
+  else if (r == -1) {
+    /* 标定进行中禁止切换 —— 本版本无 lv_msgbox_set_text，改 label */
+    lv_label_set_text(lv_msgbox_get_text(mbox),
+                      "Calibrating... stop first");
+  }
+  /* r==-2（越界）不应发生，忽略 */
+}
+
+/* 顶部机型按钮被点击：弹出机型选择菜单 */
+static void machine_btn_click_cb(lv_event_t *e)
+{
+  (void)e;
+  const uint8_t per_row = 2;   /* 每行机型数：小字号按钮放 2 个，留足文字宽度 */
+  /* 容量 = 机型名 + 换行符 + 终止 NULL，上限按最坏情况留足 */
+  static const char *btn_txts[MACHINE_PROFILE_COUNT + MACHINE_PROFILE_COUNT / 2 + 1];
+  uint8_t i, n = 0, rows = 1;
+
+  /* 从档案取机型名，每 per_row 个插入 "\n" 让按钮矩阵自动分行 */
+  for (i = 0; i < MACHINE_PROFILE_COUNT; i++) {
+    if (i > 0 && (i % per_row) == 0) {
+      btn_txts[n++] = "\n";
+      rows++;
+    }
+    btn_txts[n++] = machine_profiles[i].name;
+  }
+  btn_txts[n] = NULL;
+
+  lv_obj_t *mbox = lv_msgbox_create(lv_scr_act(), "Select Model",
+                                    "Tap a machine to switch:", btn_txts, true);
+  lv_obj_center(mbox);
+  lv_obj_set_width(mbox, 230);   /* 屏幕 240px，收窄避免超出 */
+
+  /* 机型多：用小字号 + 按钮矩阵按行数重算高度 */
+  lv_obj_t *btns = lv_msgbox_get_btns(mbox);
+  lv_obj_set_style_text_font(btns, &lv_font_montserrat_12, LV_PART_ITEMS);
+  lv_obj_set_style_pad_row(btns, 6, LV_PART_MAIN);
+  lv_obj_set_style_pad_column(btns, 4, LV_PART_MAIN);
+  lv_obj_set_width(btns, lv_pct(100));
+  lv_coord_t btn_h = lv_font_get_line_height(&lv_font_montserrat_12) + 12;
+  lv_obj_set_height(btns, rows * btn_h + (rows - 1) * 6);
+
+  lv_obj_add_event_cb(mbox, machine_msgbox_cb, LV_EVENT_VALUE_CHANGED, NULL);
+}
+
 static void ui_create(void)
 {
   lv_obj_t *scr = lv_scr_act();
   lv_obj_set_style_bg_color(scr, lv_palette_lighten(LV_PALETTE_GREY, 4), 0);   /* 浅色主题：浅灰底 */
 
+  /* ---- 顶部机型条 ---- */
+  lv_obj_t *bar_top = lv_obj_create(scr);
+  lv_obj_set_size(bar_top, 240, 24);
+  lv_obj_set_pos(bar_top, 0, 0);
+  lv_obj_set_style_bg_color(bar_top, lv_palette_main(LV_PALETTE_BLUE), 0);
+  lv_obj_set_style_radius(bar_top, 0, 0);
+  lv_obj_set_style_border_width(bar_top, 0, 0);
+  lv_obj_set_style_pad_all(bar_top, 0, 0);
+  lv_obj_clear_flag(bar_top, LV_OBJ_FLAG_SCROLLABLE);
+
+  ui_make_label(bar_top, "MODEL:", 10, 5, &lv_font_montserrat_12, lv_color_white());
+
+  btn_machine = lv_btn_create(bar_top);
+  lv_obj_set_size(btn_machine, 100, 20);
+  lv_obj_set_pos(btn_machine, 62, 2);
+  lv_obj_set_style_bg_color(btn_machine, lv_palette_darken(LV_PALETTE_BLUE, 2), 0);
+  lv_obj_set_style_radius(btn_machine, 4, 0);
+  lv_obj_set_style_pad_all(btn_machine, 0, 0);
+  lv_obj_add_event_cb(btn_machine, machine_btn_click_cb, LV_EVENT_CLICKED, NULL);
+  lv_obj_t *lbl_machine = lv_label_create(btn_machine);
+  lv_label_set_text(lbl_machine, Machine_GetCurrent()->name);
+  lv_obj_center(lbl_machine);
+
   /* 电流表盘（lv_meter 指针式仪表，量程 0~2000mA） */
   meter_cur = lv_meter_create(scr);
-  lv_obj_set_size(meter_cur, 140, 140);
-  lv_obj_set_pos(meter_cur, 50, 15);
+  lv_obj_set_size(meter_cur, 132, 132);
+  lv_obj_set_pos(meter_cur, 54, 28);
   lv_obj_add_flag(meter_cur, LV_OBJ_FLAG_OVERFLOW_VISIBLE);   /* 防刻度标签被裁剪 */
   lv_obj_set_style_pad_all(meter_cur, 5, LV_PART_MAIN);       /* 收窄内边距，表盘更大 */
 
@@ -235,14 +320,18 @@ static void ui_update_cb(lv_timer_t *timer)
   lv_obj_set_style_text_color(lbl_state, st_col, 0);
   lv_label_set_text(lbl_state, CalibState_ToStr(calib_state));
 
-  sprintf(g_buf, "%u", (unsigned)cur_idx);
+  /* 钳位：切机型瞬间 cur_idx 可能越界，读表前归零 */
+  uint8_t n = Machine_GetServoNum();
+  uint8_t idx = (cur_idx < n) ? cur_idx : 0;
+
+  sprintf(g_buf, "%u", (unsigned)idx);
   lv_label_set_text(lbl_ch, g_buf);
   sprintf(g_buf, "%u", (unsigned)cur_angle);
   lv_label_set_text(lbl_deg, g_buf);
 
-  sprintf(g_buf, "%u", (unsigned)servo_limits[cur_idx].upper_limit_deg);
+  sprintf(g_buf, "%u", (unsigned)servo_limits[idx].upper_limit_deg);
   lv_label_set_text(lbl_up, g_buf);
-  sprintf(g_buf, "%u", (unsigned)servo_limits[cur_idx].lower_limit_deg);
+  sprintf(g_buf, "%u", (unsigned)servo_limits[idx].lower_limit_deg);
   lv_label_set_text(lbl_lo, g_buf);
 
   if (calib_state != CALIB_IDLE && calib_state != CALIB_DONE) {

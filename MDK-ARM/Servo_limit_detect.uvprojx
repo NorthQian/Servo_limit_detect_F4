@@ -1529,6 +1529,11 @@
               <FileType>1</FileType>
               <FilePath>..\BSP\Src\app_servo.c</FilePath>
             </File>
+            <File>
+              <FileName>machine.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\BSP\Src\machine.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

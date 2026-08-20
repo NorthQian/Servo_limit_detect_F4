@@ -15,9 +15,7 @@ extern "C" {
 #endif
 
 #include <stdint.h>
-
-/* Number of servos -----------------------------------------------------------*/
-#define SERVO_NUM   27
+#include "machine.h"   /* MACHINE_MAX_SERVOS */
 
 /* Servo limit instance -------------------------------------------------------*/
 typedef struct {
@@ -29,21 +27,21 @@ typedef struct {
     uint16_t lower_limit_deg;  /* Lower limit: min(start_deg, end_deg)       */
 } ServoLimit_t;
 
-/* Servo limit table (defined in servo.c) ------------------------------------*/
-extern  ServoLimit_t servo_limits[SERVO_NUM];
+/* Servo limit table (defined in servo.c, refilled per active machine) -------*/
+extern  ServoLimit_t servo_limits[MACHINE_MAX_SERVOS];
 
 /* API Functions --------------------------------------------------------------*/
 
 /**
  * @brief  Get servo limit instance by servo ID
- * @param  servo_id: servo index (0 ~ SERVO_NUM-1, corresponding to A0 ~ A26)
+ * @param  servo_id: servo index (0 ~ active servo count-1)
  * @return pointer to ServoLimit_t, or NULL if servo_id is out of range
  */
 const ServoLimit_t *Servo_GetLimit(uint8_t servo_id);
 
 /**
  * @brief  Check whether current angle has reached the upper limit
- * @param  servo_id: servo index (0 ~ SERVO_NUM-1)
+ * @param  servo_id: servo index (0 ~ active servo count-1)
  * @param  current_deg: current angle in degrees
  * @return 1 if current_deg >= upper_limit_deg, 0 otherwise (or if invalid id)
  */
@@ -51,7 +49,7 @@ int Servo_IsAtUpperLimit(uint8_t servo_id, uint16_t current_deg);
 
 /**
  * @brief  Check whether current angle has reached the lower limit
- * @param  servo_id: servo index (0 ~ SERVO_NUM-1)
+ * @param  servo_id: servo index (0 ~ active servo count-1)
  * @param  current_deg: current angle in degrees
  * @return 1 if current_deg <= lower_limit_deg, 0 otherwise (or if invalid id)
  */

@@ -17,17 +17,9 @@ extern "C" {
 #endif
 
 #include <stdint.h>
-
-/* ==========================================================================
- *  Hardware configuration
- *    0 = high (full 27 servos)
- *    1 = low  (skip eyebrow_hor, eyebrow_tail, cheek, lip: 10 servos)
- * ========================================================================== */
-#define HW_CONFIG_LOW           1
+#include "machine.h"   /* MACHINE_MAX_SERVOS, Machine_IsServoSkipped */
 
 /* Calibration constants ------------------------------------------------------*/
-#define CALIB_SERVO_COUNT       27       /* Total servos (A0 ~ A26)           */
-#define CALIB_MAX_IDX           26       /* Last valid index                  */
 #define CALIB_STEP_UP_DEG       2        /* Outward search step per iteration */
 #define CALIB_STEP_DOWN_DEG     5        /* Inward search step (asymmetric)   */
 #define CALIB_MOVE_MS           200      /* Servo movement time per step      */
@@ -60,10 +52,22 @@ typedef enum {
     CALIB_DONE                  /* All servos calibrated                      */
 } CalibState_t;
 
-/* Calibration results array (defined in servo_calib.c) ----------------------*/
-extern CalibEntry_t calib_results[CALIB_SERVO_COUNT];
+/* Sweep state globals (defined in servo_calib.c) -----------------------------*/
+extern CalibState_t calib_state;
+extern uint8_t      cur_idx;
+extern uint16_t     cur_angle;
+extern uint8_t      calib_report_pending;   /* 1 = DONE report already printed */
+
+/* Calibration results array (defined in servo_calib.c, refilled per machine) -*/
+extern CalibEntry_t calib_results[MACHINE_MAX_SERVOS];
 
 /* API Functions --------------------------------------------------------------*/
+
+/**
+ * @brief  Reset sweep state (calib_state/cur_idx/cur_angle/report flag)
+ * @note   Called by Machine_Switch() when the active machine changes.
+ */
+void Calib_ResetSweep(void);
 
 
 /**
@@ -85,19 +89,10 @@ void Calib_ExportServoLimits(void);
 uint8_t Calib_GetSweptCount(void);
 
 /**
- * @brief  总扫频舵机数（已扣除跳过的舵机）
- * @return HW_CONFIG_LOW 下为 CALIB_SERVO_COUNT - SKIP_COUNT
+ * @brief  总扫频舵机数（已扣除当前机型跳过的舵机）
+ * @return 当前机型 servo_num - skip_count
  */
 uint8_t Calib_GetTotalSweptCount(void);
-
-#if HW_CONFIG_LOW
-/**
- * @brief  Check if a servo index should be skipped on low-config hardware
- * @param  idx: servo index (0 ~ 26)
- * @return 1 if servo should be skipped, 0 otherwise
- */
-uint8_t IsServoSkipped(uint8_t idx);
-#endif
 
 #ifdef __cplusplus
 }
